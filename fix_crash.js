@@ -1,13 +1,12 @@
 Java.perform(function() {
     console.log("========================================");
-    console.log("[*] 正在注入 HomeTest V6 (上帝模式)...");
+    console.log("[*] 正在注入 HomeTest V5 (解锁交互版)...");
 
     var GridLayoutManager = Java.use("androidx.recyclerview.widget.GridLayoutManager");
     var MainActivity = Java.use("com.hikvision.home.MainV3ActivityForHomeTest");
-    var ArrayList = Java.use("java.util.ArrayList");
 
     // ============================================================
-    // 补丁 1: 布局防崩 (保持)
+    // 补丁 1: 布局防崩 (保持不变)
     // ============================================================
     GridLayoutManager.$init.overload('android.content.Context', 'int').implementation = function(c, n) {
         this.$init(c, n < 1 ? 1 : n);
@@ -17,81 +16,47 @@ Java.perform(function() {
     };
 
     // ============================================================
-    // 补丁 2: 上帝模式 - 注入全量菜单
+    // 补丁 2: 强行填充数据 (保持不变)
     // ============================================================
-    // 我们需要找到 UserNavigationRes 类。根据代码上下文猜测包名。
-    // 如果报错找不到类，请看 JADX 里的 import 部分
-    var ResClassString = "com.hikvision.home.bean.UserNavigationRes"; // <--- 这里可能需要根据实际情况调整
-    
-    var original_a = MainActivity.a.overload('java.util.ArrayList');
-    
-    original_a.implementation = function(list) {
-        console.log("[*] [Patch 2] 拦截初始化 -> 正在构造上帝模式数据...");
+    var original_populate = MainActivity.a.overload('java.util.ArrayList');
+    original_populate.implementation = function(list) {
+        console.log("[*] [Patch 2] 拦截初始化 -> 强行注入默认数据");
+        original_populate.call(this, null);
+    };
+
+    // ============================================================
+    // 补丁 3 (新): 解除点击屏蔽，但增加防崩保护
+    // ============================================================
+    var original_click_logic = MainActivity.a.overload('boolean', 'int');
+    original_click_logic.implementation = function(isRefresh, index) {
+        console.log("----------------------------------------");
+        console.log("[*] [Patch 3] 点击逻辑被触发！Index: " + index);
         
         try {
-            var UserNavigationRes = Java.use(ResClassString);
-            var fullList = ArrayList.$new();
-
-            // 构造函数签名可能是 (String code, String name, int icon, int type)
-            // 我们根据 switch case 里的 "0" 到 "6" 构造数据
-            // 参数: code, name, iconResId (随便填), type (随便填)
-            
-            console.log("    -> 注入: 消息 (0)");
-            fullList.add(UserNavigationRes.$new("0", "消息[Hack]", 0, 1));
-            
-            console.log("    -> 注入: 培训 (1)");
-            fullList.add(UserNavigationRes.$new("1", "培训[Hack]", 0, 1));
-            
-            console.log("    -> 注入: 工作台 (2)");
-            fullList.add(UserNavigationRes.$new("2", "工作台", 0, 1));
-            
-            console.log("    -> 注入: 视频 (3)");
-            fullList.add(UserNavigationRes.$new("3", "视频", 0, 1));
-            
-            console.log("    -> 注入: 我的 (4)");
-            fullList.add(UserNavigationRes.$new("4", "我的", 0, 1));
-            
-            console.log("    -> 注入: 应用 (5)");
-            fullList.add(UserNavigationRes.$new("5", "应用", 0, 1));
-            
-            console.log("    -> 注入: 待办 (6)");
-            fullList.add(UserNavigationRes.$new("6", "待办[Hack]", 0, 1));
-
-            console.log("    -> 全量列表构造完成，发送给 App...");
-            original_a.call(this, fullList);
-
-        } catch(e) {
-            console.error("[!] 构造 UserNavigationRes 失败: " + e);
-            console.log("    尝试回退到 null 方案...");
-            original_a.call(this, null);
+            // 【关键】调用原始逻辑，让它去切换 Tab
+            console.log("    -> 正在执行切换逻辑...");
+            original_click_logic.call(this, isRefresh, index);
+            console.log("    -> 切换逻辑执行完毕 (无崩溃)");
+        } catch (e) {
+            console.error("[!] 切换 Tab 时发生崩溃 (已拦截): " + e);
+            console.log("    推测原因: 对应的 Fragment 缺少初始化参数。");
         }
     };
 
     // ============================================================
-    // 补丁 3: 解除交互屏蔽 (保持)
+    // 侦探: 监控点击监听器 (内部类 d)
     // ============================================================
-    var original_click = MainActivity.a.overload('boolean', 'int');
-    original_click.implementation = function(b, i) {
-        console.log("[*] 点击 Tab Index: " + i);
-        try { original_click.call(this, b, i); } catch(e) {}
-    };
-
-    // ============================================================
-    // 补丁 4: 强制激活 Bean (保持)
-    // ============================================================
-    // 这里的逻辑稍微改一下，确保所有 boolean 都为 true
+    // 内部类通常编译为 MainV3ActivityForHomeTest$d
     try {
-        var Bean = Java.use("com.hikvision.home.bean.MainV3BottomBean");
-        var overloads = Bean.$init.overloads;
-        overloads.forEach(function(overload) {
-            overload.implementation = function() {
-                for (var i = 0; i < arguments.length; i++) {
-                    if (typeof arguments[i] === 'boolean') arguments[i] = true;
-                }
-                this.$init.apply(this, arguments);
-            }
-        });
-    } catch(e) {}
+        var ListenerD = Java.use("com.hikvision.home.MainV3ActivityForHomeTest$d");
+        ListenerD.onItemClick.implementation = function(position) {
+            console.log("[User Input] 手指点击了第 " + position + " 个图标 (内部类 d 响应)");
+            this.onItemClick(position);
+        };
+    } catch(e) {
+        console.log("[!] 未找到内部类 d (可能混淆名不同)，但这不影响 Patch 3 生效。");
+    }
 
-    console.log("[*] 上帝模式脚本就绪，请重新 am start！");
+    console.log("[*] 脚本 V5 就绪，请点击底部图标！");
+    console.log("========================================");
 });
